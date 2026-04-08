@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GabMath Mobile</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="card">
+      <h1>GabMath Mobile</h1>
+      <p class="subtitle">Leia o QR Code da prova e carregue o cartao-resposta no celular.</p>
+
+      <div class="step">
+        <h2>1. Ler QR Code</h2>
+        <video id="qr-video" playsinline muted></video>
+        <div class="actions">
+          <button id="start-scan">Iniciar camera</button>
+          <button id="stop-scan" class="secondary">Parar</button>
+        </div>
+        <label class="field">
+          <span>Ou cole manualmente o conteudo bruto do QR</span>
+          <input id="proof-id-input" type="text" placeholder="Ex.: GABMATH1:eyJ2IjoxLCJpZCI6Ii4uLiJ9">
+        </label>
+        <button id="load-proof" class="full">Carregar prova</button>
+        <p id="scan-status" class="status"></p>
+      </div>
+
+      <div id="proof-panel" class="step hidden">
+        <h2>2. Cartao-resposta</h2>
+        <div id="proof-summary" class="summary"></div>
+        <label class="field">
+          <span>Foto do cartao-resposta</span>
+          <input id="card-image-input" type="file" accept="image/*" capture="environment">
+        </label>
+        <img id="card-preview" class="preview hidden" alt="Previa do cartao-resposta">
+        <p class="hint">Nesta primeira versao, a foto serve de apoio visual. O registro das alternativas ainda e manual no celular.</p>
+        <div id="answer-grid" class="answer-grid"></div>
+        <button id="correct-proof" class="full">Corrigir prova</button>
+        <div id="result-panel" class="result hidden"></div>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

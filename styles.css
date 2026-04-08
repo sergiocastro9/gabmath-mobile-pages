@@ -1,0 +1,169 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background: linear-gradient(180deg, #eef4fb 0%, #dfeaf5 100%);
+  color: #17324d;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 18px;
+}
+
+.card {
+  width: min(100%, 680px);
+  background: #ffffff;
+  border-radius: 22px;
+  box-shadow: 0 18px 50px rgba(32, 60, 90, 0.12);
+  padding: 22px 18px 28px;
+}
+
+h1, h2 {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.7rem;
+}
+
+h2 {
+  font-size: 1.08rem;
+  margin-bottom: 12px;
+}
+
+.subtitle,
+.hint,
+.status {
+  margin: 8px 0 0;
+  line-height: 1.4;
+}
+
+.step {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid #dbe6f0;
+  border-radius: 18px;
+  background: #f9fbfd;
+}
+
+.hidden {
+  display: none;
+}
+
+#qr-video,
+.preview {
+  width: 100%;
+  border-radius: 16px;
+  background: #eaf0f6;
+  display: block;
+}
+
+#qr-video {
+  min-height: 240px;
+  object-fit: cover;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #2e6ea6;
+  color: #fff;
+  font-weight: 600;
+}
+
+button.secondary {
+  background: #d8e6f3;
+  color: #17324d;
+}
+
+button.full {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.field {
+  display: block;
+  margin-top: 14px;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.95rem;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid #c9d8e7;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+
+.summary {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.answer-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.answer-row {
+  display: grid;
+  grid-template-columns: 70px repeat(5, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.answer-label {
+  font-weight: 600;
+}
+
+.choice-btn {
+  background: #edf3f8;
+  color: #17324d;
+  border: 1px solid #c7d7e5;
+  padding: 10px 0;
+}
+
+.choice-btn.selected {
+  background: #2e6ea6;
+  color: #fff;
+  border-color: #2e6ea6;
+}
+
+.result {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #eef7ef;
+  border: 1px solid #cfe5d1;
+}
+
+.result.wrong {
+  background: #fff3f2;
+  border-color: #efc8c3;
+}

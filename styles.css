@@ -44,6 +44,21 @@ h2 {
   line-height: 1.4;
 }
 
+.status-bar {
+  margin-top: 14px;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #deecf8;
+  color: #17324d;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
 .step {
   margin-top: 20px;
   padding: 16px;
@@ -56,17 +71,36 @@ h2 {
   display: none;
 }
 
-#qr-video,
-.preview {
-  width: 100%;
+.camera-stack {
+  position: relative;
   border-radius: 16px;
-  background: #eaf0f6;
+  overflow: hidden;
+  background: #0f2235;
+}
+
+#camera-video,
+#camera-overlay,
+.aligned-preview {
+  width: 100%;
   display: block;
 }
 
-#qr-video {
-  min-height: 240px;
+#camera-video {
+  min-height: 260px;
   object-fit: cover;
+}
+
+#camera-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.aligned-preview {
+  margin-top: 14px;
+  border-radius: 14px;
+  background: #eef3f8;
+  border: 1px solid #d4e0eb;
 }
 
 .actions {

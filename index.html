@@ -10,13 +10,20 @@
   <main class="app-shell">
     <section class="card">
       <h1>GabMath Mobile</h1>
-      <p class="subtitle">Leia o QR Code da prova e carregue o cartao-resposta no celular.</p>
+      <p class="subtitle">Leia o QR Code da prova e depois o cartao-resposta, sem precisar tirar foto manualmente.</p>
+
+      <div class="status-bar">
+        <span id="mode-badge" class="mode-badge">Aguardando</span>
+      </div>
 
       <div class="step">
-        <h2>1. Ler QR Code</h2>
-        <video id="qr-video" playsinline muted></video>
+        <h2>1. Camera</h2>
+        <div class="camera-stack">
+          <video id="camera-video" playsinline muted></video>
+          <canvas id="camera-overlay"></canvas>
+        </div>
         <div class="actions">
-          <button id="start-scan">Iniciar camera</button>
+          <button id="start-scan">Iniciar leitura</button>
           <button id="stop-scan" class="secondary">Parar</button>
         </div>
         <label class="field">
@@ -30,18 +37,16 @@
       <div id="proof-panel" class="step hidden">
         <h2>2. Cartao-resposta</h2>
         <div id="proof-summary" class="summary"></div>
-        <label class="field">
-          <span>Foto do cartao-resposta</span>
-          <input id="card-image-input" type="file" accept="image/*" capture="environment">
-        </label>
-        <img id="card-preview" class="preview hidden" alt="Previa do cartao-resposta">
-        <p class="hint">Nesta primeira versao, a foto serve de apoio visual. O registro das alternativas ainda e manual no celular.</p>
+        <p class="hint">Depois do QR, centralize apenas o quadro do cartao-resposta. O site alinha pelos quatro marcadores pretos e tenta ler as bolhas automaticamente.</p>
+        <canvas id="aligned-preview" class="aligned-preview"></canvas>
         <div id="answer-grid" class="answer-grid"></div>
         <button id="correct-proof" class="full">Corrigir prova</button>
         <div id="result-panel" class="result hidden"></div>
+        <button id="next-proof" class="secondary full">Ler outra prova</button>
       </div>
     </section>
   </main>
+  <script async src="https://docs.opencv.org/4.10.0/opencv.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

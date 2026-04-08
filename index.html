@@ -37,7 +37,8 @@
       <div id="proof-panel" class="step hidden">
         <h2>2. Cartao-resposta</h2>
         <div id="proof-summary" class="summary"></div>
-        <p class="hint">Depois do QR, centralize apenas o quadro do cartao-resposta. O site alinha pelos quatro marcadores pretos e tenta ler as bolhas automaticamente.</p>
+        <p class="hint">Depois do QR, posicione o celular com calma sobre o cartao-resposta. A leitura do cartao so comeca quando voce tocar no botao abaixo.</p>
+        <button id="start-card-scan" class="full">Iniciar leitura do cartao</button>
         <canvas id="aligned-preview" class="aligned-preview"></canvas>
         <div id="answer-grid" class="answer-grid"></div>
         <button id="correct-proof" class="full">Corrigir prova</button>
@@ -46,6 +47,7 @@
       </div>
     </section>
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script async src="https://docs.opencv.org/4.10.0/opencv.js"></script>
   <script src="app.js"></script>
 </body>

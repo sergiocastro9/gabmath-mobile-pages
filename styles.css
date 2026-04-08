@@ -201,3 +201,7 @@ button.full {
   background: #fff3f2;
   border-color: #efc8c3;
 }
+
+#start-card-scan {
+  margin-top: 12px;
+}

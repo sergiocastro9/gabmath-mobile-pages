@@ -34,6 +34,7 @@ function initializeApp() {
     startScanButton: document.getElementById("start-scan"),
     stopScanButton: document.getElementById("stop-scan"),
     loadProofButton: document.getElementById("load-proof"),
+    startCardScanButton: document.getElementById("start-card-scan"),
     nextProofButton: document.getElementById("next-proof"),
     proofIdInput: document.getElementById("proof-id-input"),
     scanStatus: document.getElementById("scan-status"),
@@ -55,6 +56,7 @@ function initializeApp() {
   state.elements.startScanButton.addEventListener("click", startWorkflow);
   state.elements.stopScanButton.addEventListener("click", stopWorkflow);
   state.elements.loadProofButton.addEventListener("click", () => loadProof(state.elements.proofIdInput.value, true));
+  state.elements.startCardScanButton.addEventListener("click", startManualCardReading);
   state.elements.correctProofButton.addEventListener("click", correctProof);
   state.elements.nextProofButton.addEventListener("click", resetForNextProof);
 
@@ -142,23 +144,13 @@ function stopLoops() {
 }
 
 function startQrLoop() {
-  if (!("BarcodeDetector" in window)) {
-    setStatus("Leitura automatica de QR nao suportada aqui. Cole o conteudo do QR manualmente.");
-    return;
-  }
-
-  const detector = new BarcodeDetector({ formats: ["qr_code"] });
   state.qrTimer = window.setInterval(async () => {
     if (state.phase !== "qr" || !state.elements.video?.srcObject) {
       return;
     }
 
     try {
-      const codes = await detector.detect(state.elements.video);
-      if (!codes.length) {
-        return;
-      }
-      const rawValue = String(codes[0].rawValue || "").trim();
+      const rawValue = await detectQrCode(state.elements.video);
       if (!rawValue) {
         return;
       }
@@ -188,17 +180,41 @@ function loadProof(rawValue, manual) {
     state.elements.resultPanel.classList.add("hidden");
     state.elements.resultPanel.innerHTML = "";
     setPhase("card");
+    state.elements.startCardScanButton.disabled = false;
 
     if (manual && !state.stream) {
       setStatus("Prova carregada. Inicie a camera para ler o cartao-resposta.");
     } else {
-      setStatus("QR lido. Agora centralize apenas o cartao-resposta na camera.");
-      startCardLoop();
+      setStatus("QR lido. Agora posicione o cartao com calma e toque em 'Iniciar leitura do cartao'.");
     }
   } catch (error) {
     state.elements.proofPanel.classList.add("hidden");
     setStatus(error?.message || String(error));
   }
+}
+
+async function detectQrCode(videoElement) {
+  if ("BarcodeDetector" in window) {
+    const detector = new BarcodeDetector({ formats: ["qr_code"] });
+    const codes = await detector.detect(videoElement);
+    if (codes.length) {
+      return String(codes[0].rawValue || "").trim();
+    }
+  }
+
+  if (typeof window.jsQR === "function") {
+    captureCanvas.width = videoElement.videoWidth;
+    captureCanvas.height = videoElement.videoHeight;
+    const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
+    captureContext.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
+    const imageData = captureContext.getImageData(0, 0, captureCanvas.width, captureCanvas.height);
+    const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "attemptBoth",
+    });
+    return code?.data ? String(code.data).trim() : "";
+  }
+
+  return "";
 }
 
 function renderProof() {
@@ -314,6 +330,21 @@ function startCardLoop() {
       correctProof();
     }
   }, 350);
+}
+
+function startManualCardReading() {
+  if (!state.proof) {
+    setStatus("Leia primeiro o QR Code da prova.");
+    return;
+  }
+  state.stableSignature = "";
+  state.stableCount = 0;
+  state.lastDetection = null;
+  state.elements.resultPanel.classList.add("hidden");
+  state.elements.resultPanel.innerHTML = "";
+  clearOverlay();
+  setStatus("Leitura do cartao iniciada. Mantenha o celular alinhado com calma.");
+  startCardLoop();
 }
 
 function detectCardAnswers(videoElement, questionCount) {
@@ -770,6 +801,7 @@ function resetForNextProof() {
   state.elements.proofPanel.classList.add("hidden");
   state.elements.resultPanel.classList.add("hidden");
   state.elements.resultPanel.innerHTML = "";
+  state.elements.startCardScanButton.disabled = false;
   clearOverlay();
 
   if (state.stream) {

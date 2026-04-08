@@ -10,6 +10,12 @@ const CARD_TARGET = {
 };
 const MIN_FOCUS_SCORE = 120;
 const REQUIRED_STABLE_FRAMES = 4;
+const MIN_CARD_RECTANGLE_SCORE = 350000;
+const MIN_MARKER_FILL_RATIO = 0.72;
+const MIN_MARKER_SIDE = 16;
+const MAX_MARKER_SIDE = 90;
+const MIN_FILLED_BUBBLE_SCORE = 0.24;
+const SECOND_BUBBLE_RELATIVE_LIMIT = 0.86;
 
 const state = {
   stream: null,
@@ -374,6 +380,9 @@ function detectCardAnswers(videoElement, questionCount) {
     }
 
     const corners = orderCorners(markers.slice(0, 4).map((marker) => marker.center));
+    if (rectangleScore(corners) < MIN_CARD_RECTANGLE_SCORE) {
+      return null;
+    }
     const warped = perspectiveWarp(gray, corners);
     const focusScore = measureFocus(warped);
     const basePreview = new cv.Mat();
@@ -421,7 +430,16 @@ function collectMarkerCandidates(contours, width, height) {
     const aspect = rect.width / Math.max(rect.height, 1);
     const fillRatio = area / Math.max(rect.width * rect.height, 1);
 
-    if (approx.rows === 4 && aspect > 0.7 && aspect < 1.3 && fillRatio > 0.55 && rect.width > 10 && rect.height > 10) {
+    if (
+      approx.rows === 4 &&
+      aspect > 0.8 &&
+      aspect < 1.2 &&
+      fillRatio > MIN_MARKER_FILL_RATIO &&
+      rect.width >= MIN_MARKER_SIDE &&
+      rect.height >= MIN_MARKER_SIDE &&
+      rect.width <= MAX_MARKER_SIDE &&
+      rect.height <= MAX_MARKER_SIDE
+    ) {
       const moments = cv.moments(contour);
       if (moments.m00 !== 0) {
         candidates.push({
@@ -601,10 +619,10 @@ function sampleBubbleScore(binaryMat, centerX, centerY, radius) {
 
 function resolveMarkedIndices(scores) {
   const bestScore = Math.max(...scores);
-  if (bestScore < 0.18) {
+  if (bestScore < MIN_FILLED_BUBBLE_SCORE) {
     return [];
   }
-  const threshold = Math.max(0.18, bestScore * 0.78);
+  const threshold = Math.max(MIN_FILLED_BUBBLE_SCORE, bestScore * SECOND_BUBBLE_RELATIVE_LIMIT);
   return scores
     .map((score, index) => ({ score, index }))
     .filter((item) => item.score >= threshold)

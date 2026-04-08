@@ -110,6 +110,10 @@ h2 {
   margin-top: 12px;
 }
 
+.actions.single-column {
+  grid-template-columns: 1fr;
+}
+
 button,
 input {
   font: inherit;
@@ -189,6 +193,23 @@ button.full {
   border-color: #2e6ea6;
 }
 
+.choice-pill {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid #c7d7e5;
+  background: #edf3f8;
+  color: #17324d;
+  font-weight: 700;
+}
+
+.choice-pill.selected {
+  background: #2e6ea6;
+  color: #fff;
+  border-color: #2e6ea6;
+}
+
 .result {
   margin-top: 14px;
   padding: 14px;
@@ -204,4 +225,19 @@ button.full {
 
 #start-card-scan {
   margin-top: 12px;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-weight: 600;
+}
+
+.secondary-link {
+  background: #d8e6f3;
+  color: #17324d;
 }

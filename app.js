@@ -1,18 +1,5 @@
-const state = {
-  stream: null,
-  qrTimer: null,
-  cardTimer: null,
-  proof: null,
-  answers: {},
-  phase: "idle",
-  opencvReady: false,
-  stableSignature: "",
-  stableCount: 0,
-  lastDetection: null,
-  elements: null,
-};
-
 const QR_PAYLOAD_PREFIX = "GABMATH1:";
+const STORAGE_KEY = "gabmath-current-proof";
 const CARD_TARGET = {
   width: 820,
   height: 1160,
@@ -21,67 +8,100 @@ const CARD_TARGET = {
   topMarkerY: 180,
   bottomMarkerY: 1010,
 };
+const MIN_FOCUS_SCORE = 120;
+const REQUIRED_STABLE_FRAMES = 4;
+
+const state = {
+  stream: null,
+  qrTimer: null,
+  cardTimer: null,
+  opencvReady: false,
+  proof: null,
+  answers: {},
+  stableSignature: "",
+  stableCount: 0,
+  lastDetection: null,
+  elements: {},
+  page: "",
+};
 
 const captureCanvas = document.createElement("canvas");
 
 document.addEventListener("DOMContentLoaded", initializeApp);
 
 function initializeApp() {
+  state.page = document.body.dataset.page || "qr";
+  if (state.page === "qr") {
+    initializeQrPage();
+    return;
+  }
+  if (state.page === "card") {
+    initializeCardPage();
+  }
+}
+
+function initializeQrPage() {
+  state.elements = {
+    video: document.getElementById("camera-video"),
+    overlayCanvas: document.getElementById("camera-overlay"),
+    startScanButton: document.getElementById("start-scan"),
+    stopScanButton: document.getElementById("stop-scan"),
+    loadProofButton: document.getElementById("load-proof"),
+    proofIdInput: document.getElementById("proof-id-input"),
+    scanStatus: document.getElementById("scan-status"),
+  };
+
+  state.elements.startScanButton.addEventListener("click", startQrCamera);
+  state.elements.stopScanButton.addEventListener("click", stopWorkflow);
+  state.elements.loadProofButton.addEventListener("click", () => commitQrAndGo(state.elements.proofIdInput.value));
+
+  setStatus("Aponte a camera apenas para o QR Code.");
+}
+
+function initializeCardPage() {
   state.elements = {
     video: document.getElementById("camera-video"),
     overlayCanvas: document.getElementById("camera-overlay"),
     alignedCanvas: document.getElementById("aligned-preview"),
     startScanButton: document.getElementById("start-scan"),
     stopScanButton: document.getElementById("stop-scan"),
-    loadProofButton: document.getElementById("load-proof"),
     startCardScanButton: document.getElementById("start-card-scan"),
-    nextProofButton: document.getElementById("next-proof"),
-    proofIdInput: document.getElementById("proof-id-input"),
-    scanStatus: document.getElementById("scan-status"),
-    modeBadge: document.getElementById("mode-badge"),
-    proofPanel: document.getElementById("proof-panel"),
     proofSummary: document.getElementById("proof-summary"),
+    scanStatus: document.getElementById("scan-status"),
     answerGrid: document.getElementById("answer-grid"),
-    correctProofButton: document.getElementById("correct-proof"),
     resultPanel: document.getElementById("result-panel"),
   };
 
-  const requiredIds = Object.entries(state.elements)
-    .filter(([, value]) => !value)
-    .map(([key]) => key);
-  if (requiredIds.length) {
-    throw new Error(`Elementos ausentes na pagina: ${requiredIds.join(", ")}`);
-  }
-
-  state.elements.startScanButton.addEventListener("click", startWorkflow);
+  state.elements.startScanButton.addEventListener("click", startCardCamera);
   state.elements.stopScanButton.addEventListener("click", stopWorkflow);
-  state.elements.loadProofButton.addEventListener("click", () => loadProof(state.elements.proofIdInput.value, true));
-  state.elements.startCardScanButton.addEventListener("click", startManualCardReading);
-  state.elements.correctProofButton.addEventListener("click", correctProof);
-  state.elements.nextProofButton.addEventListener("click", resetForNextProof);
+  state.elements.startCardScanButton.addEventListener("click", startCardReading);
 
-  setPhase("idle");
   waitForOpenCv();
-}
-
-function waitForOpenCv() {
-  if (window.cv && typeof window.cv.Mat === "function") {
-    state.opencvReady = true;
-    setStatus("OpenCV carregado. Inicie a leitura do QR Code.");
+  const stored = sessionStorage.getItem(STORAGE_KEY);
+  if (!stored) {
+    setStatus("Nenhuma prova foi carregada. Volte e leia o QR Code primeiro.");
+    state.elements.startCardScanButton.disabled = true;
     return;
   }
 
-  setStatus("Carregando motor de leitura do cartao-resposta...");
-  const timer = window.setInterval(() => {
-    if (window.cv && typeof window.cv.Mat === "function") {
-      window.clearInterval(timer);
-      state.opencvReady = true;
-      setStatus("OpenCV carregado. Inicie a leitura do QR Code.");
-    }
-  }, 250);
+  state.proof = JSON.parse(stored);
+  renderProofSummary();
+  renderAnswerGrid();
+  setStatus("Abra a camera e depois alinhe o cartao-resposta com calma.");
 }
 
-async function startWorkflow() {
+async function startQrCamera() {
+  await startCamera();
+  setStatus("Camera aberta. Aponte apenas para o QR Code.");
+  startQrLoop();
+}
+
+async function startCardCamera() {
+  await startCamera();
+  setStatus("Camera aberta. Posicione o cartao com calma antes de iniciar a leitura.");
+}
+
+async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus("Camera nao disponivel neste navegador.");
     return;
@@ -99,17 +119,9 @@ async function startWorkflow() {
       },
       audio: false,
     });
-
     state.stream = stream;
-    state.lastDetection = null;
     state.elements.video.srcObject = stream;
     await state.elements.video.play();
-    state.elements.proofPanel.classList.add("hidden");
-    state.elements.resultPanel.classList.add("hidden");
-    state.elements.resultPanel.innerHTML = "";
-    setPhase("qr");
-    setStatus("Aponte a camera para o QR Code. Nao precisa tirar foto.");
-    startQrLoop();
   } catch (error) {
     setStatus(`Falha ao abrir a camera: ${error?.message || String(error)}`);
   }
@@ -123,74 +135,41 @@ function stopWorkflow() {
     }
     state.stream = null;
   }
-  if (state.elements?.video) {
+  if (state.elements.video) {
     state.elements.video.srcObject = null;
   }
-  state.phase = "idle";
   clearOverlay();
-  setPhase("idle");
   setStatus("Leitura interrompida.");
 }
 
 function stopLoops() {
   if (state.qrTimer) {
-    window.clearInterval(state.qrTimer);
+    clearInterval(state.qrTimer);
     state.qrTimer = null;
   }
   if (state.cardTimer) {
-    window.clearInterval(state.cardTimer);
+    clearInterval(state.cardTimer);
     state.cardTimer = null;
   }
 }
 
 function startQrLoop() {
-  state.qrTimer = window.setInterval(async () => {
-    if (state.phase !== "qr" || !state.elements.video?.srcObject) {
+  stopLoops();
+  state.qrTimer = setInterval(async () => {
+    if (!state.elements.video?.srcObject) {
       return;
     }
-
     try {
       const rawValue = await detectQrCode(state.elements.video);
       if (!rawValue) {
         return;
       }
       state.elements.proofIdInput.value = rawValue;
-      loadProof(rawValue, false);
+      commitQrAndGo(rawValue);
     } catch (error) {
       setStatus(`Falha na leitura do QR: ${error?.message || String(error)}`);
     }
-  }, 400);
-}
-
-function loadProof(rawValue, manual) {
-  const normalized = String(rawValue || "").trim();
-  if (!normalized) {
-    setStatus("Informe ou leia um codigo de prova.");
-    return;
-  }
-
-  try {
-    state.proof = parseQrPayload(normalized);
-    state.answers = {};
-    state.lastDetection = null;
-    state.stableSignature = "";
-    state.stableCount = 0;
-    renderProof();
-    state.elements.proofPanel.classList.remove("hidden");
-    state.elements.resultPanel.classList.add("hidden");
-    state.elements.resultPanel.innerHTML = "";
-    setPhase("card");
-    state.elements.startCardScanButton.disabled = false;
-
-    if (manual && !state.stream) {
-      setStatus("Prova carregada. Inicie a camera para ler o cartao-resposta.");
-    } else {
-      setStatus("QR lido. Agora posicione o cartao com calma e toque em 'Iniciar leitura do cartao'.");
-    }
-  } catch (error) {
-    state.elements.proofPanel.classList.add("hidden");
-    setStatus(error?.message || String(error));
-  }
+  }, 450);
 }
 
 async function detectQrCode(videoElement) {
@@ -205,30 +184,65 @@ async function detectQrCode(videoElement) {
   if (typeof window.jsQR === "function") {
     captureCanvas.width = videoElement.videoWidth;
     captureCanvas.height = videoElement.videoHeight;
-    const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
-    captureContext.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
-    const imageData = captureContext.getImageData(0, 0, captureCanvas.width, captureCanvas.height);
+    const context = captureCanvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
+    const imageData = context.getImageData(0, 0, captureCanvas.width, captureCanvas.height);
     const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
       inversionAttempts: "attemptBoth",
     });
-    return code?.data ? String(code.data).trim() : "";
+    if (code?.data) {
+      return String(code.data).trim();
+    }
   }
 
   return "";
 }
 
-function renderProof() {
-  if (!state.proof) {
+function commitQrAndGo(rawValue) {
+  const normalized = String(rawValue || "").trim();
+  if (!normalized) {
+    setStatus("Informe ou leia um QR valido.");
     return;
   }
 
+  try {
+    const proof = parseQrPayload(normalized);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(proof));
+    window.location.href = "./card.html";
+  } catch (error) {
+    setStatus(error?.message || String(error));
+  }
+}
+
+function waitForOpenCv() {
+  if (window.cv && typeof window.cv.Mat === "function") {
+    state.opencvReady = true;
+    return;
+  }
+
+  const timer = setInterval(() => {
+    if (window.cv && typeof window.cv.Mat === "function") {
+      clearInterval(timer);
+      state.opencvReady = true;
+      if (state.page === "card") {
+        setStatus("OpenCV carregado. Agora voce pode iniciar a leitura do cartao.");
+      }
+    }
+  }, 250);
+}
+
+function renderProofSummary() {
+  if (!state.proof) {
+    return;
+  }
   state.elements.proofSummary.innerHTML = `
     <div><strong>Prova:</strong> ${escapeHtml(state.proof.id_prova || "")}</div>
     <div><strong>Aluno:</strong> ${escapeHtml(state.proof.aluno || "")}</div>
-    <div><strong>Turma:</strong> ${escapeHtml(state.proof.turma || "")}</div>
     <div><strong>Questoes:</strong> ${Number(state.proof.quantidade_questoes || 0)}</div>
   `;
+}
 
+function renderAnswerGrid() {
   state.elements.answerGrid.innerHTML = "";
   for (const question of state.proof.questoes || []) {
     const row = document.createElement("div");
@@ -241,75 +255,75 @@ function renderProof() {
     row.appendChild(label);
 
     for (const letter of ["A", "B", "C", "D", "E"]) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "choice-btn";
-      button.textContent = letter;
-      button.addEventListener("click", () => selectAnswer(question.numero, letter));
-      row.appendChild(button);
+      const box = document.createElement("div");
+      box.className = "choice-pill";
+      box.dataset.letter = letter;
+      box.textContent = letter;
+      row.appendChild(box);
     }
 
     state.elements.answerGrid.appendChild(row);
   }
-
-  updateRenderedAnswers();
-}
-
-function selectAnswer(questionNumber, letter) {
-  state.answers[String(questionNumber)] = letter;
-  updateRenderedAnswers();
 }
 
 function updateRenderedAnswers() {
   for (const row of state.elements.answerGrid.querySelectorAll(".answer-row")) {
     const questionNumber = row.dataset.question;
     const selected = state.answers[String(questionNumber)] || "";
-    for (const button of row.querySelectorAll(".choice-btn")) {
-      button.classList.toggle("selected", button.textContent === selected);
+    for (const pill of row.querySelectorAll(".choice-pill")) {
+      pill.classList.toggle("selected", pill.dataset.letter === selected);
     }
   }
 }
 
-function setPhase(phase) {
-  state.phase = phase;
-  const labels = {
-    idle: "Aguardando",
-    qr: "Lendo QR",
-    card: "Lendo cartao",
-  };
-  if (state.elements?.modeBadge) {
-    state.elements.modeBadge.textContent = labels[phase] || "Aguardando";
+function startCardReading() {
+  if (!state.proof) {
+    setStatus("Nenhuma prova carregada.");
+    return;
   }
-}
-
-function startCardLoop() {
+  if (!state.stream || !state.elements.video?.srcObject) {
+    setStatus("Abra a camera antes de iniciar a leitura do cartao.");
+    return;
+  }
   if (!state.opencvReady) {
-    setStatus("OpenCV ainda nao terminou de carregar.");
+    setStatus("OpenCV ainda esta carregando.");
     return;
   }
 
-  if (state.qrTimer) {
-    window.clearInterval(state.qrTimer);
-    state.qrTimer = null;
-  }
+  state.answers = {};
+  state.stableSignature = "";
+  state.stableCount = 0;
+  state.lastDetection = null;
+  state.elements.resultPanel.classList.add("hidden");
+  state.elements.resultPanel.innerHTML = "";
+  clearOverlay();
+  stopLoops();
 
-  state.cardTimer = window.setInterval(() => {
-    if (state.phase !== "card" || !state.elements.video?.srcObject || !state.proof) {
+  setStatus("Alinhe os 4 quadrados pretos. A leitura so fecha quando a imagem estiver nitida.");
+
+  state.cardTimer = setInterval(() => {
+    if (!state.elements.video?.srcObject) {
       return;
     }
 
     const detection = detectCardAnswers(state.elements.video, state.proof.quantidade_questoes);
     if (!detection) {
-      state.lastDetection = null;
       state.stableSignature = "";
       state.stableCount = 0;
-      setStatus("QR identificado. Centralize apenas o cartao-resposta.");
+      setStatus("Nao foi possivel alinhar o cartao. Mantenha visiveis os 4 quadrados pretos.");
       return;
     }
 
     state.lastDetection = detection;
     drawOverlay(detection.corners);
     drawAlignedPreview(detection.baseImageData);
+
+    if (detection.focusScore < MIN_FOCUS_SCORE) {
+      state.stableSignature = "";
+      state.stableCount = 0;
+      setStatus(`Imagem ainda sem nitidez suficiente (${Math.round(detection.focusScore)}). Aproxime e estabilize o celular.`);
+      return;
+    }
 
     const signature = answersSignature(detection.answers, state.proof.quantidade_questoes);
     if (signature === state.stableSignature) {
@@ -321,30 +335,14 @@ function startCardLoop() {
 
     state.answers = { ...detection.answers };
     updateRenderedAnswers();
-    setStatus(`Cartao detectado. Estabilizando leitura... ${state.stableCount}/3`);
+    setStatus(`Cartao alinhado e nitido. Confirmando leitura... ${state.stableCount}/${REQUIRED_STABLE_FRAMES}`);
 
-    if (state.stableCount >= 3) {
-      window.clearInterval(state.cardTimer);
+    if (state.stableCount >= REQUIRED_STABLE_FRAMES) {
+      clearInterval(state.cardTimer);
       state.cardTimer = null;
-      setStatus("Leitura do cartao concluida.");
       correctProof();
     }
   }, 350);
-}
-
-function startManualCardReading() {
-  if (!state.proof) {
-    setStatus("Leia primeiro o QR Code da prova.");
-    return;
-  }
-  state.stableSignature = "";
-  state.stableCount = 0;
-  state.lastDetection = null;
-  state.elements.resultPanel.classList.add("hidden");
-  state.elements.resultPanel.innerHTML = "";
-  clearOverlay();
-  setStatus("Leitura do cartao iniciada. Mantenha o celular alinhado com calma.");
-  startCardLoop();
 }
 
 function detectCardAnswers(videoElement, questionCount) {
@@ -377,6 +375,7 @@ function detectCardAnswers(videoElement, questionCount) {
 
     const corners = orderCorners(markers.slice(0, 4).map((marker) => marker.center));
     const warped = perspectiveWarp(gray, corners);
+    const focusScore = measureFocus(warped);
     const basePreview = new cv.Mat();
     cv.cvtColor(warped, basePreview, cv.COLOR_GRAY2RGBA);
 
@@ -391,6 +390,7 @@ function detectCardAnswers(videoElement, questionCount) {
       answers: reading.answers,
       rows: reading.rows,
       baseImageData,
+      focusScore,
     };
   } finally {
     src.delete();
@@ -439,14 +439,13 @@ function collectMarkerCandidates(contours, width, height) {
   }
 
   candidates.sort((left, right) => right.area - left.area);
-
   const unique = [];
   for (const candidate of candidates) {
     const duplicate = unique.some((item) => distance(item.center, candidate.center) < 20);
     if (!duplicate) {
       unique.push(candidate);
     }
-    if (unique.length >= 12) {
+    if (unique.length >= 10) {
       break;
     }
   }
@@ -483,19 +482,8 @@ function rectangleScore(points) {
   const heightRight = distance(topRight, bottomRight);
   const widthBalance = 1 - Math.abs(widthTop - widthBottom) / Math.max(widthTop, widthBottom, 1);
   const heightBalance = 1 - Math.abs(heightLeft - heightRight) / Math.max(heightLeft, heightRight, 1);
-  const angleScore = parallelismScore(topLeft, topRight, bottomLeft, bottomRight);
   const areaScore = (widthTop + widthBottom) * (heightLeft + heightRight);
-  return areaScore * widthBalance * heightBalance * angleScore;
-}
-
-function parallelismScore(topLeft, topRight, bottomLeft, bottomRight) {
-  const topAngle = Math.atan2(topRight.y - topLeft.y, topRight.x - topLeft.x);
-  const bottomAngle = Math.atan2(bottomRight.y - bottomLeft.y, bottomRight.x - bottomLeft.x);
-  const leftAngle = Math.atan2(bottomLeft.y - topLeft.y, bottomLeft.x - topLeft.x);
-  const rightAngle = Math.atan2(bottomRight.y - topRight.y, bottomRight.x - topRight.x);
-  const horizontal = 1 - Math.min(Math.abs(topAngle - bottomAngle), Math.PI) / Math.PI;
-  const vertical = 1 - Math.min(Math.abs(leftAngle - rightAngle), Math.PI) / Math.PI;
-  return Math.max(0.1, horizontal * vertical);
+  return areaScore * widthBalance * heightBalance;
 }
 
 function perspectiveWarp(grayMat, corners) {
@@ -526,6 +514,19 @@ function perspectiveWarp(grayMat, corners) {
   dstTri.delete();
   matrix.delete();
   return warped;
+}
+
+function measureFocus(grayMat) {
+  const laplacian = new cv.Mat();
+  const mean = new cv.Mat();
+  const stddev = new cv.Mat();
+  cv.Laplacian(grayMat, laplacian, cv.CV_64F);
+  cv.meanStdDev(laplacian, mean, stddev);
+  const score = stddev.doubleAt(0, 0) ** 2;
+  laplacian.delete();
+  mean.delete();
+  stddev.delete();
+  return score;
 }
 
 function readAnswersFromWarped(warpedGray, questionCount) {
@@ -603,7 +604,6 @@ function resolveMarkedIndices(scores) {
   if (bestScore < 0.18) {
     return [];
   }
-
   const threshold = Math.max(0.18, bestScore * 0.78);
   return scores
     .map((score, index) => ({ score, index }))
@@ -629,8 +629,7 @@ function drawOverlay(corners) {
 
   const scaleX = width / state.elements.video.videoWidth;
   const scaleY = height / state.elements.video.videoHeight;
-
-  context.strokeStyle = "#3ad07d";
+  context.strokeStyle = "#34c759";
   context.lineWidth = 4;
   context.beginPath();
   context.moveTo(corners[0].x * scaleX, corners[0].y * scaleY);
@@ -642,17 +641,18 @@ function drawOverlay(corners) {
 }
 
 function clearOverlay() {
-  if (!state.elements) {
-    return;
+  if (state.elements.overlayCanvas) {
+    const context = state.elements.overlayCanvas.getContext("2d");
+    context.clearRect(0, 0, state.elements.overlayCanvas.width, state.elements.overlayCanvas.height);
   }
-  const context = state.elements.overlayCanvas.getContext("2d");
-  context.clearRect(0, 0, state.elements.overlayCanvas.width, state.elements.overlayCanvas.height);
-  const previewContext = state.elements.alignedCanvas.getContext("2d");
-  previewContext.clearRect(0, 0, state.elements.alignedCanvas.width, state.elements.alignedCanvas.height);
+  if (state.elements.alignedCanvas) {
+    const context = state.elements.alignedCanvas.getContext("2d");
+    context.clearRect(0, 0, state.elements.alignedCanvas.width, state.elements.alignedCanvas.height);
+  }
 }
 
 function drawAlignedPreview(imageData) {
-  if (!imageData) {
+  if (!imageData || !state.elements.alignedCanvas) {
     return;
   }
   state.elements.alignedCanvas.width = imageData.width;
@@ -665,7 +665,6 @@ function drawCorrectionPreview(result) {
   if (!state.lastDetection?.baseImageData) {
     return;
   }
-
   drawAlignedPreview(state.lastDetection.baseImageData);
   const context = state.elements.alignedCanvas.getContext("2d");
   context.lineWidth = 6;
@@ -675,15 +674,10 @@ function drawCorrectionPreview(result) {
     if (!row) {
       continue;
     }
-
-    if (detail.acertou) {
-      const index = row.selectedIndex;
-      if (index >= 0) {
-        drawCircle(context, row.centers[index], row.bubbleRadius * 1.25, "#1ca44a");
-      }
+    if (detail.acertou && row.selectedIndex >= 0) {
+      drawCircle(context, row.centers[row.selectedIndex], row.bubbleRadius * 1.25, "#1ca44a");
       continue;
     }
-
     if (row.markedIndices.length) {
       for (const markedIndex of row.markedIndices) {
         drawCircle(context, row.centers[markedIndex], row.bubbleRadius * 1.25, "#d93025");
@@ -706,33 +700,23 @@ function drawCircle(context, center, radius, color) {
   context.stroke();
 }
 
-function matToImageData(mat) {
-  const rgba = new Uint8ClampedArray(mat.data);
-  return new ImageData(rgba, mat.cols, mat.rows);
-}
-
 function correctProof() {
-  if (!state.proof) {
-    setStatus("Nenhuma prova foi carregada.");
-    return;
-  }
-
-  const data = correctProofLocally(state.proof, state.answers);
-  drawCorrectionPreview(data);
+  const result = correctProofLocally(state.proof, state.answers);
+  drawCorrectionPreview(result);
   state.elements.resultPanel.classList.remove("hidden");
-  state.elements.resultPanel.classList.toggle("wrong", data.acertos !== data.total);
+  state.elements.resultPanel.classList.toggle("wrong", result.acertos !== result.total);
   state.elements.resultPanel.innerHTML = `
-    <div><strong>Aluno:</strong> ${escapeHtml(data.aluno || "")}</div>
-    <div><strong>Acertos:</strong> ${data.acertos} de ${data.total}</div>
-    <div><strong>Nota:</strong> ${data.nota}</div>
-    <div><strong>Legenda:</strong> verde = questao correta, vermelho = questao errada.</div>
+    <div><strong>Aluno:</strong> ${escapeHtml(result.aluno || "")}</div>
+    <div><strong>Acertos:</strong> ${result.acertos} de ${result.total}</div>
+    <div><strong>Nota:</strong> ${result.nota}</div>
+    <div><strong>Legenda:</strong> verde = correta, vermelho = errada.</div>
   `;
+  setStatus("Leitura concluida.");
 }
 
 function correctProofLocally(proof, answers) {
   const details = [];
   let correct = 0;
-
   for (const question of proof.questoes || []) {
     const marked = String(answers[String(question.numero)] || "").toUpperCase();
     const expected = String(question.correta_letra || "").toUpperCase();
@@ -747,7 +731,6 @@ function correctProofLocally(proof, answers) {
       acertou: hit,
     });
   }
-
   const total = details.length;
   return {
     aluno: proof.aluno || "",
@@ -761,7 +744,7 @@ function correctProofLocally(proof, answers) {
 function parseQrPayload(rawValue) {
   const normalized = String(rawValue || "").trim();
   if (!normalized.startsWith(QR_PAYLOAD_PREFIX)) {
-    throw new Error("QR Code incompativel com o modo web fixo.");
+    throw new Error("QR Code incompativel com o GabMath.");
   }
 
   const encoded = normalized.slice(QR_PAYLOAD_PREFIX.length);
@@ -774,11 +757,9 @@ function parseQrPayload(rawValue) {
   }));
 
   return {
-    id_prova: payload.id || "",
-    aluno: payload.a || "",
-    turma: payload.t || "",
-    disciplina: payload.d || "",
-    quantidade_questoes: Number(payload.n || questions.length),
+    id_prova: payload.i || payload.id || "",
+    aluno: payload.s || payload.a || "",
+    quantidade_questoes: questions.length,
     questoes: questions,
   };
 }
@@ -791,33 +772,9 @@ function decodeBase64Url(value) {
   return new TextDecoder().decode(bytes);
 }
 
-function resetForNextProof() {
-  state.proof = null;
-  state.answers = {};
-  state.lastDetection = null;
-  state.stableSignature = "";
-  state.stableCount = 0;
-  state.elements.proofIdInput.value = "";
-  state.elements.proofPanel.classList.add("hidden");
-  state.elements.resultPanel.classList.add("hidden");
-  state.elements.resultPanel.innerHTML = "";
-  state.elements.startCardScanButton.disabled = false;
-  clearOverlay();
-
-  if (state.stream) {
-    setPhase("qr");
-    setStatus("Aponte a camera para o proximo QR Code.");
-    startQrLoop();
-  } else {
-    setPhase("idle");
-    setStatus("Inicie a camera para ler a proxima prova.");
-  }
-}
-
-function setStatus(text) {
-  if (state.elements?.scanStatus) {
-    state.elements.scanStatus.textContent = text;
-  }
+function matToImageData(mat) {
+  const rgba = new Uint8ClampedArray(mat.data);
+  return new ImageData(rgba, mat.cols, mat.rows);
 }
 
 function orderCorners(points) {
@@ -832,6 +789,12 @@ function orderCorners(points) {
 
 function distance(left, right) {
   return Math.hypot(left.x - right.x, left.y - right.y);
+}
+
+function setStatus(text) {
+  if (state.elements.scanStatus) {
+    state.elements.scanStatus.textContent = text;
+  }
 }
 
 function escapeHtml(value) {
